@@ -26,6 +26,15 @@ export function eventStatus(event, env = {}) {
   return ['done', 'blocked'].includes(status) ? status : undefined;
 }
 
+function uuRemoteUrl(remote) {
+  if (!remote?.enabled) return undefined;
+  if (!remote.anonymous_device_id) return 'uuremote://external';
+  // Encode the opaque ID as one query value, including literal +, /, = and &.
+  const params = new URLSearchParams({ anonymous_device_id: remote.anonymous_device_id, window_type: remote.window_type });
+  if (remote.callback !== undefined) params.set('callback', remote.callback);
+  return `uuremote://external/device/control?${params.toString().replace(/\+/g, '%20')}`;
+}
+
 export function buildNotification(config, event, context = {}, env = {}, { force = false } = {}) {
   const status = eventStatus(event);
   if (!status) return undefined;
@@ -58,12 +67,14 @@ export function buildNotification(config, event, context = {}, env = {}, { force
     pane: text(data.title, data.pane_title, paneId, locale.pane),
     pane_id: paneId,
   };
+  const remoteUrl = uuRemoteUrl(config.uuremote);
   const options = {
     title: '{emoji} {agent} · {status_label}',
     subtitle: '{workspace} / {pane}',
     body: '{message}\nAgent: {agent_id}\nPane: {pane_id}',
     group: 'herdr-{agent_id}',
     ...(defaults?.icon ? { icon: defaults.icon } : {}),
+    ...(remoteUrl ? { url: remoteUrl } : {}),
     ...config.notification,
     ...statusConfig.notification,
     ...agentConfig.notification,

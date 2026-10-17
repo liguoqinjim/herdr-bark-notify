@@ -21,6 +21,34 @@ test('supports JSON /push and a self-hosted reverse-proxy prefix', () => {
   assert.throws(() => normalizeConfig({ bark_url: 'https://api.day.app/key', device_key: 'key' }), /\/push/);
 });
 
+test('UU Remote is opt-in and validates device IDs and window modes without exposing values', () => {
+  assert.deepEqual(normalizeConfig({}).uuremote, { enabled: false, window_type: 0 });
+  assert.deepEqual(normalizeConfig({ uuremote: { enabled: true } }).uuremote, { enabled: true, window_type: 0 });
+  const uuremote = { enabled: true, anonymous_device_id: '  opaque+/=  ', window_type: 1 };
+  assert.deepEqual(normalizeConfig({ uuremote }).uuremote, { ...uuremote, anonymous_device_id: 'opaque+/=' });
+  assert.equal(uuremote.anonymous_device_id, '  opaque+/=  ');
+  for (const invalid of [null, [], true, { enabled: 'true' }, { PRIVATE_ID: 'secret' },
+    { anonymous_device_id: '' }, { anonymous_device_id: ' ' }, { anonymous_device_id: null },
+    { anonymous_device_id: 123 }, { window_type: '1' }, { window_type: true },
+    { window_type: -1 }, { window_type: 2 }, { window_type: 0.5 },
+    { enabled: true, window_type: 1 }]) {
+    assert.throws(() => normalizeConfig({ uuremote: invalid }), error => /uuremote/.test(error.message) && !/PRIVATE_ID|secret/.test(error.message));
+  }
+});
+
+test('UU Remote accepts optional callbacks and rejects malformed URLs without exposing values', () => {
+  const remote = { enabled: true, anonymous_device_id: 'bound' };
+  for (const callback of ['', 'myapp://controlresult', 'https://example.com/result?key=PRIVATE_CALLBACK#result']) {
+    assert.equal(normalizeConfig({ uuremote: { ...remote, callback } }).uuremote.callback, callback);
+  }
+  for (const callback of [null, false, 1, [], {}, ' ', 'PRIVATE_CALLBACK', '/PRIVATE_CALLBACK',
+    'myapp:PRIVATE_CALLBACK', 'https://user:PRIVATE_CALLBACK@example.com', 'myapp://control\nresult']) {
+    assert.throws(() => normalizeConfig({ uuremote: { ...remote, callback } }),
+      error => /uuremote.callback/.test(error.message) && !error.message.includes('PRIVATE_CALLBACK'));
+  }
+  assert.throws(() => normalizeConfig({ uuremote: { enabled: true, callback: 'myapp://controlresult' } }), /anonymous_device_id/);
+});
+
 test('validates call and volume at every notification configuration layer', () => {
   const layers = [
     notification => ({ notification }),

@@ -134,6 +134,7 @@ Only the Bark endpoint is required. The default notification language is **`zh-C
 | `locale` | `"zh-CN"` | `"zh-CN"` or `"en"`; controls default status labels and body text. |
 | `timeout_ms` | `5000` | Per-attempt deadline, including reading the response body. Integer, 100–10000. |
 | `retries` | `1` | Additional attempts after transient errors. Integer, 0–2. |
+| `uuremote` | Disabled | UU Remote settings: `enabled`, `anonymous_device_id`, `window_type`, and optional `callback`. See below. |
 | `notification` | Built-in templates | Global Bark fields and templates. |
 | `statuses` | Both enabled | `done` and `blocked` settings, each with optional `enabled` and `notification`. |
 | `agents` | Built-in names | Settings keyed by the exact event `data.agent` value. Each allows `name`, `notification`, `statuses`. |
@@ -150,7 +151,7 @@ Unknown options, unsupported template variables and invalid types are errors rat
 | `group` | `herdr-{agent_id}`; separates agents in Bark. |
 | `sound` | Omitted, letting Bark use its default. Set a Bark sound name, e.g. `bell`, `minuet`, `calypso`, `alarm`. |
 | `icon` | Defaults to the matching LobeHub square avatar when available. Override with a URL or disable with `null`. |
-| `url` | Optional URL opened when the notification is tapped. No Herdr mobile deep link is assumed. |
+| `url` | Optional tap destination. Explicit values override the generated UU Remote link; `null` or `""` removes it. |
 | `level` | Optional: `active`, `passive`, `timeSensitive`, `critical`. Availability depends on Bark and iOS permissions. |
 | `call` | Since 1.2.0: `"1"` or `1` repeats the ringtone for about 30 seconds; `"0"` or `0` disables repetition. Omitted by default. |
 | `volume` | Since 1.2.0: number from 0 to 10, including decimals; controls `critical` alert volume only. Omitted by default (Bark uses 5); `0` is zero volume. |
@@ -159,6 +160,172 @@ Unknown options, unsupported template variables and invalid types are errors rat
 | `copy` | Optional text to copy from the notification. |
 
 String fields support the variables below, except `level` and `call`, which accept only their listed values. Use `null` to remove any inherited optional field; `""` also removes optional text fields, but is not accepted for `level`, `call` or numeric fields. Do not remove or empty `body`. This plugin intentionally exposes a subset of Bark's API; arbitrary extra JSON fields are not forwarded.
+
+### Open UU Remote from a notification
+
+To connect directly to a particular computer when tapping a notification, merge this fragment into your existing `config.json`, preserving your Bark endpoint and other settings. Supply the identifier returned by device authorization:
+
+```json
+{
+  "uuremote": {
+    "enabled": true,
+    "anonymous_device_id": "RAW_ID_FROM_BINDING_CALLBACK",
+    "window_type": 0,
+    "callback": ""
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `enabled` | Boolean, default `false`. Disables generated links when false. |
+| `anonymous_device_id` | Optional non-empty string. Omit to open the app; supply to generate a `uuremote://external/device/control` link. Supply the raw value; the plugin encodes it. |
+| `window_type` | Integer `0` (default, fullscreen) or `1` (picture-in-picture). Enabling PiP requires a device identifier. |
+| `callback` | Optional string. Omission leaves the parameter out; explicit `""` preserves a trailing `&callback=`. Non-empty values must be URLs with scheme and host, e.g. `myapp://controlresult`; the plugin encodes them. Enabling a non-empty callback requires a device identifier. |
+
+For example, the raw identifier `opaque+/=` produces `uuremote://external/device/control?anonymous_device_id=opaque%2B%2F%3D&window_type=0&callback=` with the configuration above. When copying an identifier from an existing link, URL-decode that parameter once (`%2F` → `/`, `%2B` → `+`, `%3D` → `=`). Do not put an entire link or an already encoded value in `anonymous_device_id`. An existing complete link can also be used unchanged as `notification.url`.
+
+For app-only navigation without a specific computer, use `"uuremote": { "enabled": true }`; notifications will use `uuremote://external`.
+
+The [official UU Remote guide](https://github.com/netease-uuyc/uuremote-integration-guide) requires mobile client **4.42.0+** and supports Windows/macOS control targets. iPhone PiP requires iOS 18+ and PiP support.
+
+Obtain `anonymous_device_id` through the guide's `device/authorize` flow. A normal device code, password or Herdr pane ID cannot replace it. This host-side plugin does not receive mobile callbacks; follow the Webhook.site walkthrough below to capture the result, or implement a callback receiver using the official client examples.
+
+The generated link is a default `url`, subject to global, status, agent and agent-status notification overrides. Remove an existing `notification.url` to use the generated link, or set `url` to `null` or `""` to remove navigation for selected notifications. The protocol's `callback` is optional: only PiP with a valid callback URL returns results; fullscreen never calls back. Omit it when no callback is needed. This plugin includes configured callbacks in links but does not receive or wait for remote-control results. Bark acceptance does not verify a phone launch or connection. The link targets a computer without selecting a Herdr pane.
+
+Use `check` to validate settings and `preview` to inspect the generated `url`. Direct-connect identifiers are included in previews and notifications sent to your Bark service; treat those outputs as device configuration data. Saved settings take effect on the next invocation.
+
+#### Capture device parameters with Webhook.site: complete walkthrough
+
+This workflow combines the [UU Remote authorization callback protocol](https://github.com/netease-uuyc/uuremote-integration-guide#2-设备绑定) with [Webhook.site's HTTP request inspector](https://docs.webhook.site/#what-is-webhooksite). Use an HTTPS receiver as the authorization callback; after choosing a computer, the phone's browser visits that URL with the device identifier in its query string. No callback server deployment is needed.
+
+```text
+Webhook.site receiver → open authorization link on phone → choose computer in UU Remote
+→ browser visits callback → extract anonymous_device_id → configure plugin → tap Bark notification
+```
+
+Have a signed-in mobile client, a supported Windows/macOS computer in the account, and a computer with Node.js 22+. First confirm that the phone can connect to the target through UU Remote normally. `YOUR_WEBHOOK_UUID`, `YOUR_NONCE` and `opaque+/=` below are demonstration values.
+
+**1. Copy a temporary HTTPS receiver**
+
+Open [Webhook.site](https://webhook.site/) on your computer, copy **Your unique URL**, and keep the request inspector open:
+
+```text
+https://webhook.site/YOUR_WEBHOOK_UUID
+```
+
+Use this receiver, not the address bar's `#!/view/` dashboard URL or the unique email address. Its UUID identifies the temporary inbox, not your computer. See the [official explanation of the two URL formats](https://docs.webhook.site/#im-getting-a-405-method-not-allowed-whats-wrong).
+
+This sends the device identifier to Webhook.site. Anyone who knows a free receiver's ID can view its data. Keep the receiver, callback request and identifier private; do not enter Bark keys or remote-control passwords there. See [Webhook.site's privacy explanation](https://docs.webhook.site/#is-my-data-private).
+
+**2. Generate an authorization link**
+
+Replace `YOUR_WEBHOOK_UUID` with the UUID from your receiver and run this locally in macOS/Linux or Windows PowerShell. It prints text without making a request:
+
+```sh
+node -e "const callback = 'https://webhook.site/YOUR_WEBHOOK_UUID'; const nonce = require('node:crypto').randomUUID(); console.log('nonce=' + nonce); console.log('uuremote://external/device/authorize?callback=' + encodeURIComponent(callback) + '&nonce=' + nonce);"
+```
+
+Keep the first line's nonce and copy the entire second line. Its shape is:
+
+```text
+uuremote://external/device/authorize?callback=https%3A%2F%2Fwebhook.site%2FYOUR_WEBHOOK_UUID&nonce=YOUR_NONCE
+```
+
+Use **`device/authorize`** at this stage. The callback is required and must be encoded once; do not pre-encode the receiver before putting it in the command. The nonce correlates this attempt with its result and is not part of the final plugin configuration.
+
+**3. Open it on the iPhone and choose a computer**
+
+Copy the complete link to your phone. Create a temporary shortcut with a **URL** action containing the link, followed by **Open URLs** using the first action's output. Run it and accept the prompt to open UU Remote. Apple documents this [URL scheme invocation method](https://support.apple.com/guide/shortcuts/apd68802640c/ios).
+
+Select the intended computer in UU Remote and confirm. Allow the browser to open the HTTPS callback if prompted. A blank response page or receipt message is not the request inspector; return to Webhook.site on your computer. The phone needs network access to Webhook.site. Do not try to fetch the `uuremote://` link with desktop `curl`.
+
+**4. Extract the identifier from the callback request**
+
+Select the new request in Webhook.site's left-hand list and inspect its URL/query parameters. Expect a **GET**; an empty body is normal. Match its nonce to step 2 before using the result:
+
+| Parameter | Meaning |
+| --- | --- |
+| `anonymous_device_id` | The encrypted identifier returned on success; retain its raw value. |
+| `nonce` | Correlates the result with this attempt rather than an older request. |
+| `error` | Authorization failed; resolve the error instead of treating it as an identifier. |
+
+For example, a successful request might look like this:
+
+```text
+https://webhook.site/YOUR_WEBHOOK_UUID?anonymous_device_id=opaque%2B%2F%3D&nonce=YOUR_NONCE
+```
+
+If the query-parameter display already shows `opaque+/=`, copy it directly. Alternatively, replace `PASTE_FULL_CALLBACK_REQUEST_URL` below with the complete HTTPS request URL from the request details, not the dashboard URL:
+
+```sh
+node -e "const p = new URL('PASTE_FULL_CALLBACK_REQUEST_URL').searchParams; console.log(JSON.stringify({ nonce: p.get('nonce'), error: p.get('error'), anonymous_device_id: p.get('anonymous_device_id') }, null, 2));"
+```
+
+Confirm the nonce matches, `error` is `null`, and the identifier is non-empty. `URL.searchParams` decodes once: **do not call `decodeURIComponent` again**. Preserve `+`, `/` and `=`. If unexpected spaces appear, extract again from the original request URL instead of guessing replacements.
+
+**5. Merge the settings into the active configuration**
+
+Find the directory on the machine running this plugin:
+
+```sh
+herdr plugin config-dir herdr.bark-notify
+```
+
+Edit its `config.json` and merge this object, replacing the demonstration ID with the extracted raw value. Keep existing Bark credentials, sounds and agent settings:
+
+```json
+{
+  "uuremote": {
+    "enabled": true,
+    "anonymous_device_id": "opaque+/=",
+    "window_type": 0,
+    "callback": ""
+  }
+}
+```
+
+Use `window_type: 0` for fullscreen, or `1` for PiP subject to the requirements above. The callbacks have different purposes: **the authorization link needs the Webhook.site receiver; the plugin's callback is for remote-control results and is left empty or omitted here.** Normal direct connections no longer depend on Webhook.site after extraction.
+
+Remove any `notification.url` override that should give way to the generated link. Obtain an identifier for each target; repeat authorization if account changes or device unbinding invalidate the saved identifier.
+
+**6. Validate and send one test notification**
+
+From the repository directory, on macOS/Linux:
+
+```sh
+bark_config_dir="$(herdr plugin config-dir herdr.bark-notify)"
+node notify.mjs check --config "$bark_config_dir/config.json"
+node notify.mjs preview --config "$bark_config_dir/config.json"
+```
+
+On Windows PowerShell:
+
+```powershell
+$barkConfigFile = Join-Path (herdr plugin config-dir herdr.bark-notify).Trim() 'config.json'
+node .\notify.mjs check --config $barkConfigFile
+node .\notify.mjs preview --config $barkConfigFile
+```
+
+The preview's `url` should contain `/device/control`, the encoded identifier and `window_type=0`, plus `&callback=` when explicitly configured empty. These checks make no network request. Once satisfied, send one **real test notification** below; in PowerShell replace the config path argument with `$barkConfigFile`:
+
+```sh
+node notify.mjs test --status done --config "$bark_config_dir/config.json"
+```
+
+Tap the notification and confirm the correct computer opens. Subsequent automatic notifications read the saved settings without a restart. You can then remove the temporary shortcut and clear the captured requests in Webhook.site. Free receivers have expiry and request limits; create a new one if needed for later authorization. See [Webhook.site retention](https://docs.webhook.site/#how-long-is-data-stored-on-webhooksite).
+
+**Troubleshooting**
+
+| Symptom | Check |
+| --- | --- |
+| No device picker | Check client version and login; use the phone's URL → Open URLs actions, `device/authorize`, and an unbroken link. |
+| Browser opens but no binding result appears | Check receiver versus `#!/view/` URL, matching UUID, expiry and request limits. A plain visit without ID/error parameters is not a result. |
+| `error=no_device` | The current account needs a supported Windows/macOS target. |
+| `error=user_cancel`, `timeout` or `superseded` | Cancellation, timeout or a replacement request; finish login and retry one attempt at a time with a new nonce. |
+| Nonce mismatch | Select the matching request or authorize again before saving anything. |
+| Notification only opens the app | Check the active config directory, missing identifier, and `notification.url` overrides. |
+| Device missing or connection fails | Check copying/encoding, account, online status and permission to control; reauthorize after unbinding/account changes. Binding does not prove current connectivity. |
 
 ### Repeated ringing and critical volume (1.2.0)
 
@@ -206,7 +373,7 @@ Workspace context is used only when its workspace ID matches the event. Focused-
 
 Notification fields merge in this order, with later settings overriding earlier ones:
 
-1. Built-in defaults.
+1. Built-in defaults, including the UU Remote link when enabled.
 2. Global `notification`.
 3. `statuses.<status>.notification`.
 4. `agents.<agent_id>.notification`.

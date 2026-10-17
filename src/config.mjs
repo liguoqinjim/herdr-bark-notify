@@ -7,7 +7,7 @@ export const VARIABLES = new Set([
   'workspace', 'workspace_id', 'tab', 'tab_id', 'pane', 'pane_id', 'message',
 ]);
 const FIELDS = new Set(['title', 'subtitle', 'body', 'group', 'sound', 'icon', 'url', 'level', 'call', 'volume', 'badge', 'isArchive', 'copy']);
-const ROOT = new Set(['bark_url', 'device_key', 'enabled', 'locale', 'statuses', 'notification', 'agents', 'timeout_ms', 'retries']);
+const ROOT = new Set(['bark_url', 'device_key', 'enabled', 'locale', 'statuses', 'notification', 'agents', 'timeout_ms', 'retries', 'uuremote']);
 export const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function object(value, label) {
@@ -54,6 +54,35 @@ function statuses(value, label) {
   }
 }
 
+function uuRemote(value) {
+  keys(value, new Set(['enabled', 'anonymous_device_id', 'window_type', 'callback']), 'uuremote');
+  const remote = { enabled: false, window_type: 0, ...value };
+  if (typeof remote.enabled !== 'boolean') throw new UserError('uuremote.enabled must be boolean');
+  integer(remote.window_type, 0, 1, 'uuremote.window_type');
+  if (remote.anonymous_device_id !== undefined) {
+    string(remote.anonymous_device_id, 'uuremote.anonymous_device_id');
+    remote.anonymous_device_id = remote.anonymous_device_id.trim();
+  }
+  if (remote.enabled && remote.window_type === 1 && !remote.anonymous_device_id) {
+    throw new UserError('uuremote.window_type=1 requires anonymous_device_id / 画中画需要绑定设备标识');
+  }
+  if (remote.callback !== undefined) {
+    if (typeof remote.callback !== 'string') throw new UserError('uuremote.callback must be a string / 必须为字符串');
+    // An explicit empty string preserves callback=; omission leaves it out.
+    if (remote.callback !== '') {
+      let callback;
+      try { callback = new URL(remote.callback); } catch { /* Report a fixed error below. */ }
+      if (!callback?.host || callback.username || callback.password || /\s/.test(remote.callback)) {
+        throw new UserError('uuremote.callback must be a URL with scheme and host / 回调地址必须包含协议和主机');
+      }
+      if (remote.enabled && !remote.anonymous_device_id) {
+        throw new UserError('uuremote.callback requires anonymous_device_id / 回调需要绑定设备标识');
+      }
+    }
+  }
+  return remote;
+}
+
 export function normalizeConfig(raw, env = {}) {
   keys(raw, ROOT, 'config');
   const config = { enabled: true, locale: 'zh-CN', timeout_ms: 5000, retries: 1, notification: {}, statuses: {}, agents: {}, ...raw };
@@ -61,6 +90,7 @@ export function normalizeConfig(raw, env = {}) {
   if (!['zh-CN', 'en'].includes(config.locale)) throw new UserError('locale must be zh-CN or en');
   integer(config.timeout_ms, 100, 10000, 'timeout_ms');
   integer(config.retries, 0, 2, 'retries');
+  config.uuremote = uuRemote(config.uuremote === undefined ? {} : config.uuremote);
   notification(config.notification, 'notification');
   statuses(config.statuses, 'statuses');
   object(config.agents, 'agents');

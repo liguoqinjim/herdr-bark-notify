@@ -30,15 +30,18 @@ test('CLI initializes once, validates without sending and previews explicit fixt
   await run(['init', '--config', file, '--locale', 'en']);
   assert.equal(JSON.parse(await readFile(file, 'utf8')).locale, 'en');
   await assert.rejects(run(['init', '--config', file]), /not overwritten/);
-  await writeFile(file, JSON.stringify({ bark_url: 'https://api.day.app/private', locale: 'en', notification: { call: '1', volume: 2 } }));
+  await writeFile(file, JSON.stringify({ bark_url: 'https://api.day.app/private', locale: 'en', notification: { call: '1', volume: 2 }, uuremote: { enabled: true, anonymous_device_id: 'opaque+/=', window_type: 1, callback: 'myapp://controlresult?key=PRIVATE_CALLBACK' } }));
   const check = await run(['check', '--config', file]);
   assert.match(check.stdout, /Configuration valid/);
   assert.ok(!check.stdout.includes('private'));
+  assert.ok(!check.stdout.includes('opaque'));
+  assert.ok(!check.stdout.includes('PRIVATE_CALLBACK'));
   const fixture = fileURLToPath(new URL('../fixtures/blocked.json', import.meta.url));
   const preview = await run(['preview', '--config', file, '--event', fixture]);
   assert.equal(JSON.parse(preview.stdout).subtitle, 'w2 / Fix database migration');
   assert.equal(JSON.parse(preview.stdout).call, '1');
   assert.equal(JSON.parse(preview.stdout).volume, '2');
+  assert.equal(JSON.parse(preview.stdout).url, 'uuremote://external/device/control?anonymous_device_id=opaque%2B%2F%3D&window_type=1&callback=myapp%3A%2F%2Fcontrolresult%3Fkey%3DPRIVATE_CALLBACK');
 });
 
 test('event entrypoint posts to a local Bark mock with real env contract; tests bypass switches', async t => {
@@ -56,6 +59,7 @@ test('event entrypoint posts to a local Bark mock with real env contract; tests 
   t.after(() => rm(dir, { recursive: true, force: true }));
   const config = {
     bark_url: `http://127.0.0.1:${server.address().port}/key`,
+    uuremote: { enabled: true, anonymous_device_id: 'opaque+/=', callback: '' },
     statuses: { blocked: { notification: { level: 'critical', call: 1, sound: 'alarm', volume: 2 } } },
   };
   const file = path.join(dir, 'config.json');
@@ -68,6 +72,7 @@ test('event entrypoint posts to a local Bark mock with real env contract; tests 
   assert.match(received[0].subtitle, /Real project/);
   assert.ok(!Object.hasOwn(received[0], 'call'));
   assert.ok(!Object.hasOwn(received[0], 'volume'));
+  assert.equal(received[0].url, 'uuremote://external/device/control?anonymous_device_id=opaque%2B%2F%3D&window_type=0&callback=');
   await writeFile(file, JSON.stringify({ ...config, enabled: false }));
   await run([], env);
   assert.equal(received.length, 1);
@@ -79,4 +84,5 @@ test('event entrypoint posts to a local Bark mock with real env contract; tests 
   assert.equal(received[1].call, '1');
   assert.equal(received[1].sound, 'alarm');
   assert.equal(received[1].volume, '2');
+  assert.equal(received[1].url, received[0].url);
 });

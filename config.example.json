@@ -4,6 +4,12 @@
   "locale": "zh-CN",
   "timeout_ms": 5000,
   "retries": 1,
+  "uuremote": {
+    "enabled": false,
+    "anonymous_device_id": "RAW_ID_FROM_BINDING_CALLBACK",
+    "window_type": 0,
+    "callback": ""
+  },
   "notification": {
     "title": "{emoji} {agent} · {status_label}",
     "subtitle": "{workspace} / {pane}",

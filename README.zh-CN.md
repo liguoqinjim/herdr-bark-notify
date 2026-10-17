@@ -134,6 +134,7 @@ herdr plugin config-dir herdr.bark-notify
 | `locale` | `"zh-CN"` | 支持 `"zh-CN"`、`"en"`，控制默认状态标签和正文。 |
 | `timeout_ms` | `5000` | 每次请求的超时毫秒数，包含读取响应正文；整数，100–10000。 |
 | `retries` | `1` | 临时错误后额外重试次数；整数，0–2。 |
+| `uuremote` | 关闭 | UU 远程跳转设置：`enabled`、`anonymous_device_id`、`window_type`、可选的 `callback`。详见下方。 |
 | `notification` | 内置模板 | 全局 Bark 字段和通知模板。 |
 | `statuses` | 两种状态均开启 | `done`、`blocked` 设置，每项可包含 `enabled` 和 `notification`。 |
 | `agents` | 内置显示名称 | 以事件 `data.agent` 的真实值为键，每项可包含 `name`、`notification`、`statuses`。 |
@@ -150,7 +151,7 @@ herdr plugin config-dir herdr.bark-notify
 | `group` | `herdr-{agent_id}`，按 Agent 在 Bark 中分组。 |
 | `sound` | 默认不指定，由 Bark 决定。可设置 Bark 铃声名，例如 `bell`、`minuet`、`calypso`、`alarm`。 |
 | `icon` | 默认使用匹配的 LobeHub 方形头像（若有），可用 URL 覆盖，或设为 `null` 关闭。 |
-| `url` | 可选，点击通知跳转的 URL。本插件不假设 Herdr 存在手机端深链接。 |
+| `url` | 可选，点击通知跳转的 URL。显式设置会覆盖 UU 远程生成的链接，`null` 或 `""` 可移除跳转。 |
 | `level` | 可选：`active`、`passive`、`timeSensitive`、`critical`，实际效果取决于 Bark 和 iOS 权限。 |
 | `call` | 1.2.0 起支持：`"1"` 或 `1` 重复响铃约 30 秒；`"0"` 或 `0` 关闭重复。默认不设置。 |
 | `volume` | 1.2.0 起支持：0–10 的数字，可用小数，仅控制 `critical` 重要警告音量。默认不设置（Bark 使用 5）；`0` 表示零音量。 |
@@ -159,6 +160,172 @@ herdr plugin config-dir herdr.bark-notify
 | `copy` | 可选，从通知复制时使用的文本。 |
 
 除 `level`、`call` 只能使用规定值外，字符串字段均支持下方模板变量。用 `null` 可以移除继承的任意可选字段；空字符串 `""` 还可移除可选文本字段，但不能用于 `level`、`call` 或数字字段；不要移除或清空 `body`。插件只开放上述 Bark API 字段，不会直接透传任意额外 JSON。
+
+### 点击通知跳转到 UU 远程
+
+点击通知直接连接指定电脑时，将以下片段合并到已有 `config.json`，保留 Bark 地址和其他设置，并填写绑定流程返回的设备标识：
+
+```json
+{
+  "uuremote": {
+    "enabled": true,
+    "anonymous_device_id": "绑定回调返回的原始设备标识",
+    "window_type": 0,
+    "callback": ""
+  }
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | 布尔值，默认 `false`。设为 `false` 关闭自动生成的跳转链接。 |
+| `anonymous_device_id` | 可选的非空字符串。省略时仅打开 App；填写后生成 `uuremote://external/device/control` 链接。插件自动编码参数，不要预先 URL 编码。 |
+| `window_type` | 整数 `0`（默认，全屏）或 `1`（画中画）。启用画中画必须填写设备标识。 |
+| `callback` | 可选字符串。不设置时省略该参数；显式 `""` 保留链接末尾的 `&callback=`。非空值必须是含协议和主机的回调 URL，例如 `myapp://controlresult`，插件自动编码。启用非空回调时必须填写设备标识。 |
+
+例如原始设备标识为 `opaque+/=` 时，上述配置生成 `uuremote://external/device/control?anonymous_device_id=opaque%2B%2F%3D&window_type=0&callback=`。从已有链接复制设备标识时，先对该参数 URL 解码一次（如 `%2F` → `/`、`%2B` → `+`、`%3D` → `=`）；不要把整条链接或已经编码的参数直接填进 `anonymous_device_id`。如果已有完整链接，也可直接原样设置 `notification.url`。
+
+只需要打开 App、暂不指定电脑时，可以简化为 `"uuremote": { "enabled": true }`，通知将使用 `uuremote://external`。
+
+按照 [UU 远程官方集成指南](https://github.com/netease-uuyc/uuremote-integration-guide)，手机需要安装并登录 **4.42.0 或更新版本**的 UU 远程；直连目标仅支持 Windows/macOS。iPhone 画中画需要 iOS 18+ 且设备支持 PiP。
+
+设备标识必须来自官方 `device/authorize` 绑定流程返回的 `anonymous_device_id`，不能使用普通设备码、连接密码或 Herdr Pane ID 代替。本插件运行在 Herdr 主机上，不接收手机 App 回调；可以按下方教程借助 Webhook.site 接收绑定结果，也可以自行实现官方指南中的回调接收 App。
+
+生成的链接作为默认 `url`，仍遵循全局、状态、Agent、Agent 状态的通知覆盖顺序。如果已有 `notification.url`，请删除它以使用自动生成的链接；设置 `"url": null` 或 `"url": ""` 可为特定通知移除跳转。官方协议中的 `callback` 是可选项，仅画中画模式且提供有效回调地址时才返回结果，全屏模式不会回调；无需回调时可直接省略该配置。插件只将配置的回调放入链接，不接收或等待手机端远控结果。Bark 发送成功只代表推送服务接受请求，实际跳转和远控需要在手机上验证。远控进入指定电脑，不会自动选中 Herdr Pane。
+
+可用 `check` 检查配置、`preview` 查看生成的 `url`。启用直连后，预览、通知及 Bark 服务会包含加密设备标识，请按设备配置数据保管。设置保存后下次插件调用即生效。
+
+#### 借助 Webhook.site 提取设备直连参数：完整教程
+
+下面将 [UU 远程的绑定回调协议](https://github.com/netease-uuyc/uuremote-integration-guide#2-设备绑定)与 [Webhook.site 的 HTTP 请求查看功能](https://docs.webhook.site/#what-is-webhooksite)组合使用：把 HTTPS 接收地址放进绑定链接的 `callback`，在手机选择电脑后，通过浏览器访问回调地址，将设备标识带到请求记录中。无需部署回调服务器。
+
+```text
+Webhook.site 接收地址 → 手机打开绑定链接 → UU 远程选择电脑
+→ 浏览器访问回调 → 提取 anonymous_device_id → 写入插件配置 → 点击 Bark 通知直连
+```
+
+准备好已登录的 UU 远程手机端、账号下可选择的 Windows/macOS 电脑，以及安装了 Node.js 22+ 的电脑。先确认手机能在 UU 远程内正常连接目标电脑。以下 `YOUR_WEBHOOK_UUID`、`YOUR_NONCE` 和 `opaque+/=` 都是演示值，不是可用的设备参数。
+
+**1. 获取临时 HTTPS 接收地址**
+
+在电脑浏览器打开 [Webhook.site](https://webhook.site/)，复制页面 **Your unique URL** 下的接收地址，并保留这个请求查看页面。例如：
+
+```text
+https://webhook.site/YOUR_WEBHOOK_UUID
+```
+
+应复制上面的接收地址，不要复制浏览器地址栏中带 `#!/view/` 的管理页面地址，也不要复制 unique email address。Webhook.site 的 UUID 只标识这个临时收件箱，不是 UU 设备 ID。[官方 FAQ 也说明了这两种地址的区别](https://docs.webhook.site/#im-getting-a-405-method-not-allowed-whats-wrong)。
+
+绑定结果会发送到 Webhook.site。免费地址的请求记录可被知道该地址 ID 的人查看，因此不要公开接收地址、完整回调链接或设备标识，也不要向其中填入 Bark 密钥或远控密码。[Webhook.site 隐私说明](https://docs.webhook.site/#is-my-data-private)。
+
+**2. 生成设备绑定链接**
+
+在电脑终端执行下面命令，先将 `YOUR_WEBHOOK_UUID` 替换为刚才接收地址中的实际 UUID。命令只在本地生成文本，不发送请求；macOS、Linux 和 Windows PowerShell 均可使用：
+
+```sh
+node -e "const callback = 'https://webhook.site/YOUR_WEBHOOK_UUID'; const nonce = require('node:crypto').randomUUID(); console.log('nonce=' + nonce); console.log('uuremote://external/device/authorize?callback=' + encodeURIComponent(callback) + '&nonce=' + nonce);"
+```
+
+保存第一行的 `nonce`，复制第二行完整的 `uuremote://` 链接。生成结果形如：
+
+```text
+uuremote://external/device/authorize?callback=https%3A%2F%2Fwebhook.site%2FYOUR_WEBHOOK_UUID&nonce=YOUR_NONCE
+```
+
+这里必须使用 **`device/authorize`**，因为此时还没有设备标识。`callback` 必须填写且只编码一次；`nonce` 用于识别这一次绑定结果，不需要写入最终插件配置。不要提前把接收地址改成 `%3A%2F...` 再交给命令编码。
+
+**3. 在 iPhone 上打开链接并选择电脑**
+
+把完整绑定链接复制到 iPhone。在“快捷指令”中新建一个临时快捷指令，按顺序添加 **URL** 和 **打开 URL（Open URLs）** 两个操作：将绑定链接粘贴进 URL 操作，让“打开 URL”使用上一操作的结果，然后运行。出现系统打开 App 提示时允许打开 UU 远程。这是 Apple 文档支持的 [URL Scheme 调用方式](https://support.apple.com/guide/shortcuts/apd68802640c/ios)。
+
+在 UU 远程的设备选择界面选择要直连的电脑并确认。HTTPS 回调应由手机浏览器打开；若出现打开浏览器的确认提示，允许继续。浏览器中的空白页或接收成功提示不是设备参数查看界面，接下来回到电脑上的 Webhook.site 请求列表查看。此流程需要手机能访问 Webhook.site；不要在电脑终端用 `curl` 请求 `uuremote://` 链接。
+
+**4. 从回调请求中读取设备 ID**
+
+在 Webhook.site 左侧请求列表中找到刚收到的请求，打开详情，查看请求 URL 或查询参数区域。正常回调通常是一个 **GET** 请求，正文为空也正常。确认 `nonce` 与第 2 步相同，再读取结果：
+
+| 回调参数 | 如何处理 |
+| --- | --- |
+| `anonymous_device_id` | 成功时返回的加密设备标识，保存其原始值。 |
+| `nonce` | 与本次生成的值核对，防止使用旧请求或另一台电脑的结果。 |
+| `error` | 绑定失败原因；出现此项时先处理错误，不要把它当作设备 ID。 |
+
+成功请求的 URL 可能如下（仅演示）：
+
+```text
+https://webhook.site/YOUR_WEBHOOK_UUID?anonymous_device_id=opaque%2B%2F%3D&nonce=YOUR_NONCE
+```
+
+如果查询参数区域已显示 `opaque+/=`，直接复制该值。如果拿到的是完整请求 URL，可以在本地用下面命令提取；将 `PASTE_FULL_CALLBACK_REQUEST_URL` 替换为请求详情中的完整 HTTPS URL，而不是 `#!/view/` 管理页面地址：
+
+```sh
+node -e "const p = new URL('PASTE_FULL_CALLBACK_REQUEST_URL').searchParams; console.log(JSON.stringify({ nonce: p.get('nonce'), error: p.get('error'), anonymous_device_id: p.get('anonymous_device_id') }, null, 2));"
+```
+
+检查输出中的 `nonce` 是否匹配、`error` 是否为 `null`、`anonymous_device_id` 是否非空。`URL.searchParams` 已解码一次，复制输出的设备标识即可，**不要再次调用 `decodeURIComponent`**。保留 `+`、`/`、`=`；如果标识出现了不应有的空格，请从原始请求 URL 重新提取，不要凭猜测修改字符。
+
+**5. 合并到实际使用的插件配置**
+
+在安装本插件的电脑上执行：
+
+```sh
+herdr plugin config-dir herdr.bark-notify
+```
+
+打开输出目录中的 `config.json`，将以下 `uuremote` 对象合并进去，用提取到的真实原始值替换演示 ID，保留已有 Bark 地址、密钥、铃声和 Agent 设置：
+
+```json
+{
+  "uuremote": {
+    "enabled": true,
+    "anonymous_device_id": "opaque+/=",
+    "window_type": 0,
+    "callback": ""
+  }
+}
+```
+
+这里的 `window_type: 0` 表示全屏直连；需要画中画时改为 `1` 并满足前面的系统要求。注意两个 `callback` 的用途不同：**绑定链接的 `callback` 必须是 Webhook.site 接收地址；插件配置中的 `callback` 是远控结果回调，本教程留空，也可省略。** 获取 ID 后，日常直连不再依赖 Webhook.site，无需将临时接收地址长期保存在插件中。
+
+如果已有任意层级的 `notification.url`，它会覆盖生成的链接；删除该字段以使用 `uuremote` 设置。获取 ID 只需按设备执行一次；设备解绑、切换账号后旧标识失效时，再重新绑定获取。
+
+**6. 检查并发送一次验证通知**
+
+回到本仓库目录。macOS / Linux：
+
+```sh
+bark_config_dir="$(herdr plugin config-dir herdr.bark-notify)"
+node notify.mjs check --config "$bark_config_dir/config.json"
+node notify.mjs preview --config "$bark_config_dir/config.json"
+```
+
+Windows PowerShell：
+
+```powershell
+$barkConfigFile = Join-Path (herdr plugin config-dir herdr.bark-notify).Trim() 'config.json'
+node .\notify.mjs check --config $barkConfigFile
+node .\notify.mjs preview --config $barkConfigFile
+```
+
+预览中的 `url` 应含 `/device/control`、编码后的设备标识和 `window_type=0`；显式设置空回调时末尾还有 `&callback=`。前两个命令不发网络请求。确认后，使用下面命令发送一次**真实测试通知**；PowerShell 将配置路径参数替换为 `$barkConfigFile`：
+
+```sh
+node notify.mjs test --status done --config "$bark_config_dir/config.json"
+```
+
+点击 iPhone 上的测试通知，确认进入的是预期电脑。保存配置后，下次自动通知即使用此链接，无需重启。提取和验证完成后，可删除临时快捷指令并在 Webhook.site 清理请求记录；免费地址存在有效期和请求数量限制，过期后如需重新绑定，应创建新地址。[Webhook.site 保留规则](https://docs.webhook.site/#how-long-is-data-stored-on-webhooksite)。
+
+**常见问题**
+
+| 现象 | 排查方法 |
+| --- | --- |
+| 没有出现 UU 远程设备选择界面 | 检查客户端版本和登录状态；使用手机“URL → 打开 URL”，确认链接是 `device/authorize`，复制时未断行。 |
+| 浏览器打开了 Webhook.site，但列表里没有绑定结果 | 检查是否误用了 `#!/view/` 地址、是否查看同一个 UUID、接收地址是否过期或达到请求上限。只有普通访问、没有 ID/错误参数的请求不是绑定结果。 |
+| `error=no_device` | 确认当前账号下存在支持的 Windows/macOS 电脑。 |
+| `error=user_cancel`、`timeout` 或 `superseded` | 分别对应取消、等待超时、被后续绑定请求替代；完成登录后重新生成链接，逐次操作并核对新 `nonce`。 |
+| 返回的 `nonce` 不匹配 | 选择与本次绑定一致的请求；必要时重新绑定，不要继续保存旧结果。 |
+| 点击通知只打开 App，没有直连 | 检查实际配置目录、设备 ID 是否填写，以及 `notification.url` 是否覆盖了生成链接。 |
+| 直连提示设备不存在或无法连接 | 检查复制/编码、账号、设备在线和允许被控状态；解绑或换账号后重新获取标识。绑定成功不等于设备此刻可以连接。 |
 
 ### 重复响铃与重要警告音量（1.2.0）
 
@@ -206,7 +373,7 @@ Bark 的 `call` 将铃声延长到约 30 秒，不会无限响铃直到点开通
 
 通知字段按以下顺序合并，后面的覆盖前面的：
 
-1. 内置默认值。
+1. 内置默认值（包含启用时生成的 UU 远程链接）。
 2. 全局 `notification`。
 3. `statuses.<状态>.notification`。
 4. `agents.<agent_id>.notification`。

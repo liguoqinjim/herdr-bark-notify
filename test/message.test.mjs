@@ -76,6 +76,59 @@ test('global switch, per-status switch, per-agent override, explicit test bypass
   assert.ok(buildNotification(normalizeConfig({ enabled: false }), sampleEvent(), {}, {}, { force: true }));
 });
 
+test('UU Remote links open the app or connect to the bound device in either window mode', () => {
+  const render = uuremote => buildNotification(normalizeConfig({ uuremote }), sampleEvent()).payload;
+  assert.equal(render(undefined).url, undefined);
+  assert.equal(render({ enabled: false, anonymous_device_id: 'private-device' }).url, undefined);
+  assert.equal(render({ enabled: true }).url, 'uuremote://external');
+  const id = 'opaque+/=&window_type=9#?% 中文 {agent_id}';
+  for (const window_type of [0, 1]) {
+    const payload = render({ enabled: true, anonymous_device_id: id, window_type });
+    const url = new URL(payload.url);
+    assert.equal(url.protocol, 'uuremote:');
+    assert.equal(url.host, 'external');
+    assert.equal(url.pathname, '/device/control');
+    assert.deepEqual([...url.searchParams], [['anonymous_device_id', id], ['window_type', String(window_type)]]);
+    assert.equal(url.hash, '');
+    assert.ok(!payload.url.includes('+'));
+    assert.ok(!Object.hasOwn(payload, 'uuremote'));
+  }
+});
+
+test('UU Remote preserves explicit empty callbacks and encodes nested callback URLs once', () => {
+  const callbacks = ['', 'myapp://controlresult?next=a+b%2Fc&pane={pane_id}#结果'];
+  for (const callback of callbacks) {
+    for (const window_type of [0, 1]) {
+      const config = normalizeConfig({ uuremote: { enabled: true, anonymous_device_id: 'opaque+/=', window_type, callback } });
+      const { payload } = buildNotification(config, sampleEvent());
+      const url = new URL(payload.url);
+      assert.deepEqual([...url.searchParams], [
+        ['anonymous_device_id', 'opaque+/='], ['window_type', String(window_type)], ['callback', callback],
+      ]);
+      if (callback === '') assert.equal(payload.url, `uuremote://external/device/control?anonymous_device_id=opaque%2B%2F%3D&window_type=${window_type}&callback=`);
+    }
+  }
+});
+
+test('explicit notification URLs can override or remove the generated UU Remote link at every layer', () => {
+  const layers = [
+    notification => ({ notification }),
+    notification => ({ statuses: { blocked: { notification } } }),
+    notification => ({ agents: { codex: { notification } } }),
+    notification => ({ agents: { codex: { statuses: { blocked: { notification } } } } }),
+  ];
+  for (const wrap of layers) {
+    for (const url of ['myapp://pane/{pane_id}', null, '']) {
+      const config = normalizeConfig({ uuremote: { enabled: true, anonymous_device_id: 'bound' }, ...wrap({ url }) });
+      const payload = buildNotification(config, sampleEvent('blocked')).payload;
+      assert.equal(payload.url, url ? 'myapp://pane/w1:p2' : undefined);
+    }
+  }
+  assert.throws(() => buildNotification(normalizeConfig({
+    uuremote: { enabled: true, anonymous_device_id: 'a'.repeat(3000) },
+  }), sampleEvent()), /3000/);
+});
+
 test('call and volume preserve overrides, zero and removal with Bark string encoding', () => {
   const raw = {
     notification: { call: 1, volume: 5 },

@@ -96,3 +96,17 @@ Configuration tests cover valid values, invalid types and ranges, and all four n
 Earlier manually requested critical/call tests at volumes 2 and 5 were accepted by the configured backend. No measured sound level or guaranteed ringing duration is claimed from those responses.
 
 此前按用户要求发送的音量 2、5 的重要警告与重复响铃测试均被配置中的后端接受；不能仅凭成功响应认定实际音量或响铃时长已测量验证。
+
+## UU Remote links / UU 远程跳转
+
+On 2026-10-16, `npm run check` and all 37 tests passed. New coverage checks opt-in defaults, app launch links, fullscreen/PiP device links, opaque ID encoding, optional/empty/nested callback URLs, invalid settings, URL overrides/removal at every notification layer, and the existing payload size limit. CLI checks verify that configuration validation does not print the identifier or callback, preview contains the encoded link, and both automatic events and explicit tests deliver that link (including explicit `callback=`) to a local HTTP mock.
+
+2026-10-16，`npm run check` 和全部 37 项测试通过。新增覆盖默认关闭、App 拉起、全屏/画中画远控链接、设备标识编码、可选/空值/嵌套回调 URL、配置校验、各层 URL 覆盖与移除，以及原有通知大小限制。CLI 验证检查配置时不输出标识或回调地址、预览包含正确编码的链接，自动事件和显式测试均向本地 HTTP 模拟服务发送该链接（含显式的 `callback=`）。
+
+These automated checks did not send a real push or perform mobile device binding, app launching or remote control. In a separate user-requested test on the same date, Bark accepted a notification with the supplied device's fullscreen link and empty callback, and the user reported that the test worked normally. The working device parameters were then saved to the active local configuration.
+
+这些自动化检查没有发送真实推送，也没有执行手机设备绑定、App 跳转或远控。同日按用户要求另行发送了一条带指定设备全屏链接和空回调的真实通知，Bark 接受请求，用户确认测试一切正常；随后已将验证过的设备参数写入当前本地配置。
+
+The Chinese and English Webhook.site walkthrough commands were executed locally with synthetic callback data. Checks covered authorization link construction, matching nonce values, successful and failed result extraction, decoding exactly once (including a literal `%2F` inside an identifier), and valid plugin JSON that renders the expected control link. No actual Webhook.site authorization round trip was performed for these documentation checks.
+
+中英文 Webhook.site 教程中的命令已使用模拟回调在本地执行，验证绑定链接构造、nonce 对应、成功与失败结果提取、只解码一次（包括标识内部含字面量 `%2F` 的情况），以及配置 JSON 可被插件接受并生成预期直连链接。本次文档校验未实际执行 Webhook.site 手机绑定回调流程。
