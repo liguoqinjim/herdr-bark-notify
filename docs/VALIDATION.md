@@ -110,3 +110,9 @@ These automated checks did not send a real push or perform mobile device binding
 The Chinese and English Webhook.site walkthrough commands were executed locally with synthetic callback data. Checks covered authorization link construction, matching nonce values, successful and failed result extraction, decoding exactly once (including a literal `%2F` inside an identifier), and valid plugin JSON that renders the expected control link. No actual Webhook.site authorization round trip was performed for these documentation checks.
 
 中英文 Webhook.site 教程中的命令已使用模拟回调在本地执行，验证绑定链接构造、nonce 对应、成功与失败结果提取、只解码一次（包括标识内部含字面量 `%2F` 的情况），以及配置 JSON 可被插件接受并生成预期直连链接。本次文档校验未实际执行 Webhook.site 手机绑定回调流程。
+
+## Version 1.3.0 verified completion / 1.3.0 完成状态修复
+
+On 2026-11-03, Herdr 0.9.5 confirmed that real plugin event JSON contains `pane_agent_status_changed` and no completion/state-change sequences; those fields are available from `agent get`. Focused Pi completion was `idle` with matching sequences. `npm run check` and all 44 tests passed, including focused/background completion, initial idle, missing fields, duplicate events, consecutive rounds, pane/session changes and 20 concurrent claims. The isolated real-Herdr smoke test passed with two test pushes, one blocked push and one verified completion push to its local HTTP mock. No real Bark notification was sent by these automated checks. iPhone lock-screen/Termius and cmux behavior still require device observation.
+
+2026-11-03 使用 Herdr 0.9.5 确认：真实插件事件 JSON 使用 `pane_agent_status_changed`，不含完成/状态序号；序号需通过 `agent get` 获取。聚焦 Pi 的完成状态为 `idle`，两个序号一致。`npm run check` 与 44 项测试通过，覆盖聚焦/后台完成、初始空闲、缺字段、重复事件、连续轮次、Pane/会话更换和 20 个并发去重。真实 Herdr 隔离集成测试通过，本地 HTTP 模拟服务收到两条测试、一条待处理和一条经核验的完成通知。这些自动化检查没有向真实 Bark 推送；iPhone 锁屏/Termius 与 cmux 表现仍需真机观察。

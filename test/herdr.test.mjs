@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichPaneTitle } from '../src/herdr.mjs';
+import { enrichPaneTitle, resolveCompletion } from '../src/herdr.mjs';
 import { sampleEvent } from '../src/message.mjs';
+import { readFile } from 'node:fs/promises';
 
 const env = { HERDR_BIN_PATH: '/path with spaces/herdr', HERDR_SOCKET_PATH: '/tmp/test.sock' };
 test('reads explicit pane label with argv; does not replace historical status or agent', async () => {
@@ -50,4 +51,35 @@ test('retains event title and ignores foreign, failed or unavailable lookups', a
     async () => ({ stdout: JSON.stringify({ result: { pane: { pane_id: 'w9:p9', workspace_id: 'w9', label: 'Wrong' } } }) }),
   ]) assert.equal(await enrichPaneTitle(event, env, execute), event);
   assert.equal(await enrichPaneTitle(event, {}, async () => assert.fail('no host context')), event);
+});
+
+test('converts a focused idle only when the same pane and agent have a verified completion', async () => {
+  const event = JSON.parse(await readFile(new URL('../fixtures/idle.json', import.meta.url)));
+  const result = await resolveCompletion(event, env, async (bin, args) => {
+    assert.deepEqual(args, ['agent', 'get', 'w1:p2']);
+    return { stdout: JSON.stringify({ result: { agent: { pane_id: 'w1:p2', workspace_id: 'w1', agent: 'pi', display_agent: 'Pi', agent_status: 'idle', completion_seq: 51, state_change_seq: 51, agent_session: { value: '/private/session.jsonl' } } } }) };
+  });
+  assert.equal(result.event.data.agent_status, 'done');
+  assert.equal(result.event.data.completion_seq, 51);
+  assert.equal(result.agent.agent_session.value, '/private/session.jsonl');
+});
+
+test('rejects startup idle, missing sequences, stale states and identity mismatches', async () => {
+  const event = JSON.parse(await readFile(new URL('../fixtures/idle.json', import.meta.url)));
+  const agents = [
+    { agent_status: 'idle' },
+    { agent_status: 'idle', completion_seq: 0, state_change_seq: 0 },
+    { agent_status: 'idle', completion_seq: 51 },
+    { agent_status: 'working', completion_seq: 51, state_change_seq: 51 },
+    { agent_status: 'idle', agent: 'codex', completion_seq: 51, state_change_seq: 51 },
+    { agent_status: 'idle', pane_id: 'w9:p9', completion_seq: 51, state_change_seq: 51 },
+    { agent_status: 'idle', workspace_id: 'w9', completion_seq: 51, state_change_seq: 51 },
+  ];
+  for (const agent of agents) {
+    agent.pane_id ??= 'w1:p2'; agent.workspace_id ??= 'w1'; agent.agent ??= 'pi';
+    const result = await resolveCompletion(event, env, async () => ({ stdout: JSON.stringify({ result: { agent } }) }));
+    assert.match(result.skip, /Not a verified completion/);
+  }
+  assert.match((await resolveCompletion(event, env, async () => { throw new Error('timeout'); })).skip, /lookup failed/);
+  assert.match((await resolveCompletion(event, {})).skip, /no pane\/host/);
 });

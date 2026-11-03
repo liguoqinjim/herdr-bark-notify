@@ -1,7 +1,7 @@
 id = "herdr.bark-notify"
 name = "Bark Notify"
-version = "1.2.0"
-min_herdr_version = "0.9.0"
+version = "1.3.0"
+min_herdr_version = "0.9.5"
 description = "Bilingual Bark notifications for completed and blocked agents, with workspace and pane context."
 platforms = ["linux", "macos", "windows"]
 

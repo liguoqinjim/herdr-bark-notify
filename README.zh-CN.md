@@ -22,7 +22,7 @@ Pane: w1:p3
 
 ## 环境要求
 
-- **Herdr 0.9.0 或更新版本**。清单最低版本取自本次实际核验的事件接口版本。
+- **Herdr 0.9.5 或更新版本**（自动完成通知需要）。旧版没有用于区分任务完成与初始空闲/会话切换的完成序号。
 - **Node.js 22 或更新版本**，且 Herdr **服务端进程**的 `PATH` 能找到 `node`。
 - iPhone 已安装 Bark、允许通知，并已获得有效的设备推送密钥。
 - 运行 Herdr 的机器能够访问 `api.day.app` 或你的自建 Bark 服务。
@@ -101,7 +101,9 @@ herdr plugin log list --plugin herdr.bark-notify
 
 动作可能异步执行，请在插件命令日志中查看输出和退出码。预览及测试动作使用模拟上下文，不代表某个实际任务已完成。
 
-接下来正常在 Herdr 中启动 Agent 并完成任务。Herdr 报告 `done` 或 `blocked` 后，插件即自动发送通知。插件不以进程退出判断任务完成，也不读取终端输出；需要 Herdr 自身的 Agent 检测和集成功能能够正常产生状态事件。
+接下来正常在 Herdr 中启动 Agent 并完成任务。Herdr 报告 `done`、经核验的完成 `idle` 或 `blocked` 后，插件即自动发送通知。完成事件只查询对应 Pane 的 `herdr agent get`，并要求正数 `completion_seq` 与 `state_change_seq` 相同；初始空闲和会话切换会忽略。插件不以进程退出判断任务完成，也不读取终端输出。
+
+完成通知在 Herdr 提供的 `HERDR_PLUGIN_STATE_DIR` 中按 Pane、Agent 会话（如有）及完成序号去重。文件锁串行处理并发 Hook，同一轮最多推送一次，后续轮次仍可通知。状态不会写入源码仓库。缺少可靠序号或状态数据时会跳过，不猜测完成。
 
 ## 从 GitHub 安装
 
@@ -443,13 +445,13 @@ Herdr 的 `disable` 会停止自动事件执行。也可以在 `config.json` 中
 | 无法读取配置 / 缺少地址 | 用 `herdr plugin config-dir herdr.bark-notify` 获取目录，在该目录创建 `config.json`，不要放到源码目录。 |
 | 提示示例密钥未替换 | 将 `YOUR_BARK_KEY` 替换成真实设备密钥。 |
 | JSON 或字段错误 | 使用标准 JSON、文档中的字段名和类型，并运行 `check`。错误消息不会输出原始配置值。 |
-| 测试能收到，自动通知收不到 | 检查插件启用状态、`enabled`、状态过滤，并确认 Herdr 实际产生了 `done` / `blocked`。仅退出进程不是触发条件。对于已查看或聚焦的完成状态，Herdr 可能报告 `idle`，插件不会把 `idle` 自行解释成 `done`。 |
+| 测试能收到，自动通知收不到 | 使用 Herdr 0.9.5+，检查插件启用状态和 `enabled`，再查看插件日志。聚焦 Pane 的完成可能以 `idle` 到达；只有对应 Pane 的 `agent get` 确认完成序号与状态序号一致才通知。初始空闲、会话切换、缺字段和查询失败会有意跳过。 |
 | 只显示工作区 / Pane ID | 主机没有提供匹配的名称或 Pane 标题。可在 Herdr 中为 Pane 设置清晰名称。 |
 | HTTP 4xx | 检查密钥和端点；`/push` 必须配合 `device_key`。HTTP 429 会重试。 |
 | HTTP 5xx / 网络失败 / 超时 | 检查 Bark、DNS、防火墙和 HTTPS 证书信任；插件拒绝重定向，应配置最终地址。 |
 | Bark 拒绝通知 | HTTP 成功，但 Bark JSON 的 `code` 不是 `200`。检查端点、密钥及服务端。 |
 | 显示发送成功，但手机没响 | Bark 接受请求不等于手机已收到。检查 iOS 通知权限、专注模式、网络和 Bark 铃声设置。 |
-| 重复收到通知 | 每个匹配事件都可能发送，没有持久化去重；若首次已送达但响应丢失，网络重试可能重复推送。 |
+| 重复收到通知 | 完成 Hook 已按 Pane/会话和序号去重；若首次已送达但响应丢失，网络重试仍可能重复推送。 |
 | 远程 Agent 没通知 | 在运行对应 Herdr 服务的机器上安装 Node、安装插件并配置 Bark。本地配置不会自动同步到远程。 |
 
 网络错误、超时、HTTP 429/5xx，以及 Bark 响应中整数类型的 429/5xx 错误码会重试。其他拒绝响应和无效 JSON 立即失败。重试间隔依次为 250、500 毫秒，不解析 `Retry-After`。所有网络尝试的最大配置用时约为 30.75 秒，另加进程开销。没有持久化消息队列，不保证失败后最终送达；设置 `retries: 0` 可以禁用自动重发。
@@ -476,7 +478,8 @@ src/config.mjs         配置读取、初始化与校验
 src/message.mjs        身份解析、中英文文案、模板
 src/agents.mjs         Herdr Agent 名称与默认方形头像地址
 src/bark.mjs           HTTP 发送、超时与重试
-src/herdr.mjs          缺失 Pane 标签的只读查询
+src/herdr.mjs          Pane 与完成状态的只读查询
+src/dedupe.mjs         带锁的持久化完成去重
 config.example.json    扩展配置示例
 fixtures/              示例事件
 test/                  Node 内置测试

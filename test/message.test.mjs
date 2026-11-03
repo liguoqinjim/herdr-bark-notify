@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { normalizeConfig } from '../src/config.mjs';
-import { EVENT, buildNotification, eventStatus, sampleEvent, parseObject } from '../src/message.mjs';
+import { EVENT, buildNotification, eventStatus, sampleEvent, parseObject, completionKey } from '../src/message.mjs';
 
 test('renders real Herdr event fields and matched context in both languages', async () => {
   const event = JSON.parse(await readFile(new URL('../fixtures/done.json', import.meta.url)));
@@ -19,7 +19,7 @@ test('renders real Herdr event fields and matched context in both languages', as
 });
 
 test('filters non-notifying states and unrelated events before config is needed', () => {
-  for (const status of ['working', 'idle', 'unknown', null, 3]) {
+  for (const status of ['working', 'unknown', null, 3]) {
     assert.equal(eventStatus(sampleEvent(status)), undefined);
   }
   assert.equal(eventStatus({ ...sampleEvent(), event: 'pane.created' }), undefined);
@@ -28,9 +28,22 @@ test('filters non-notifying states and unrelated events before config is needed'
   assert.equal(eventStatus({ data: { agent_status: 'DONE' } }), 'done');
 });
 
-test('Herdr plugin snake_case envelope and dotted environment name both match', () => {
+test('idle remains distinct until Herdr verifies it; completion keys require matching positive sequences', () => {
+  assert.equal(eventStatus(sampleEvent('idle')), 'idle');
+  const event = sampleEvent();
+  event.data.completion_seq = 51;
+  event.data.state_change_seq = 51;
+  assert.equal(completionKey(event), 'w1:p2|codex|51');
+  for (const [completion_seq, state_change_seq] of [[0, 0], [undefined, 51], [51, 52], ['51', 51]]) {
+    assert.equal(completionKey({ ...event, data: { ...event.data, completion_seq, state_change_seq } }), undefined);
+  }
+  const agent = { agent: 'pi', pane_id: 'w1:p2', completion_seq: 51, state_change_seq: 51, agent_session: { value: '/sessions/current.jsonl' } };
+  assert.equal(completionKey(sampleEvent(), agent), 'w1:p2|/sessions/current.jsonl|1');
+});
+
+test('Herdr plugin snake_case envelope and environment name both match', () => {
   const event = { event: 'pane_agent_status_changed', data: { type: 'pane_agent_status_changed', agent_status: 'blocked', agent: 'codex', pane_id: 'w1:p2', workspace_id: 'w1' } };
-  assert.equal(eventStatus(event, { HERDR_PLUGIN_EVENT: EVENT }), 'blocked');
+  assert.equal(eventStatus(event, { HERDR_PLUGIN_EVENT: 'pane_agent_status_changed' }), 'blocked');
   assert.equal(buildNotification(normalizeConfig({ locale: 'en' }), event).payload.title, '⚠ Codex · Needs attention');
 });
 

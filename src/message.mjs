@@ -21,9 +21,9 @@ export function parseObject(raw, label) {
 export function eventStatus(event, env = {}) {
   // Never infer completion from focused_pane_status: it may belong to another pane.
   // Plugin EventEnvelope uses snake_case; socket subscriptions use dot notation.
-  if ((event.event && ![EVENT, 'pane_agent_status_changed'].includes(event.event)) || (env.HERDR_PLUGIN_EVENT && env.HERDR_PLUGIN_EVENT !== EVENT)) return undefined;
+  if ((event.event && ![EVENT, 'pane_agent_status_changed'].includes(event.event)) || (env.HERDR_PLUGIN_EVENT && ![EVENT, 'pane_agent_status_changed'].includes(env.HERDR_PLUGIN_EVENT))) return undefined;
   const status = typeof event.data?.agent_status === 'string' ? event.data.agent_status.toLowerCase() : undefined;
-  return ['done', 'blocked'].includes(status) ? status : undefined;
+  return ['done', 'idle', 'blocked'].includes(status) ? status : undefined;
 }
 
 function uuRemoteUrl(remote) {
@@ -44,14 +44,14 @@ export function buildNotification(config, event, context = {}, env = {}, { force
   // Context describes focus on some host versions. Only use its labels when IDs match.
   const sameWorkspace = Boolean(workspaceId && context.workspace_id === workspaceId);
   const samePane = Boolean(paneId && context.focused_pane_id === paneId);
-  const agentId = text(data.agent, samePane && context.focused_pane_agent, 'unknown');
+  const agentId = text(data.agent, data.resolved_agent, samePane && context.focused_pane_agent, 'unknown');
   const defaults = agentDefaults(agentId);
   const agentConfig = own(config.agents, agentId) ?? {};
   const statusConfig = own(config.statuses, status) ?? {};
   const agentStatus = own(agentConfig.statuses, status) ?? {};
   if (!force && (!config.enabled || !(agentStatus.enabled ?? statusConfig.enabled ?? true))) return undefined;
   const locale = messages[config.locale];
-  const displayAgent = text(data.display_agent);
+  const displayAgent = text(data.resolved_display_agent, data.display_agent);
   const variables = {
     agent: text(agentConfig.name, displayAgent, defaults?.name, agentId === 'unknown' ? 'Agent' : agentId),
     agent_id: agentId,
@@ -66,6 +66,7 @@ export function buildNotification(config, event, context = {}, env = {}, { force
     tab_id: text(data.tab_id, samePane && context.tab_id),
     pane: text(data.title, data.pane_title, paneId, locale.pane),
     pane_id: paneId,
+    completion_seq: data.completion_seq,
   };
   const remoteUrl = uuRemoteUrl(config.uuremote);
   const options = {
@@ -111,6 +112,18 @@ function truncate(value, limit) {
 export function sampleEvent(status = 'done') {
   return {
     event: EVENT,
-    data: { workspace_id: 'w1', workspace_label: 'my-project', pane_id: 'w1:p2', agent: 'codex', display_agent: 'Codex', title: 'Implement Bark notifications', agent_status: status },
+    data: { workspace_id: 'w1', workspace_label: 'my-project', pane_id: 'w1:p2', agent: 'codex', display_agent: 'Codex', title: 'Implement Bark notifications', agent_status: status, ...(status === 'done' ? { completion_seq: 1, state_change_seq: 1 } : {}) },
   };
+}
+
+export function completionKey(event, agent = {}) {
+  if (eventStatus(event) !== 'done') return undefined;
+  const data = event.data ?? {};
+  const completionSeq = data.completion_seq ?? agent.completion_seq;
+  const stateChangeSeq = data.state_change_seq ?? agent.state_change_seq;
+  if (!Number.isSafeInteger(completionSeq) || completionSeq <= 0 || completionSeq !== stateChangeSeq) return undefined;
+  const paneId = text(data.pane_id, agent.pane_id);
+  const session = agent.agent_session?.value;
+  const identity = text(typeof session === 'string' ? session : undefined, data.agent, agent.agent, paneId, 'unknown');
+  return `${paneId}|${identity}|${completionSeq}`;
 }

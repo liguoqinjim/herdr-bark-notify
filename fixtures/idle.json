@@ -1,0 +1,12 @@
+{
+  "event": "pane_agent_status_changed",
+  "data": {
+    "type": "pane_agent_status_changed",
+    "workspace_id": "w1",
+    "pane_id": "w1:p2",
+    "agent": "pi",
+    "display_agent": "Pi",
+    "title": "Inspect Herdr completion events",
+    "agent_status": "idle"
+  }
+}

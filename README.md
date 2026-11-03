@@ -22,7 +22,7 @@ Pane: w1:p3
 
 ## Requirements
 
-- **Herdr 0.9.0 or newer.** The manifest deliberately requires the version whose event contract was checked during development.
+- **Herdr 0.9.5 or newer** for automatic completion notifications. Older hosts do not provide the completion sequence required to distinguish work from initial idle/session changes.
 - **Node.js 22 or newer**, available as `node` in the Herdr **server's** `PATH`.
 - Bark installed on your iPhone, notifications allowed, and a valid device push key.
 - Network access from the machine running Herdr to `api.day.app` or your self-hosted Bark server.
@@ -101,7 +101,9 @@ herdr plugin log list --plugin herdr.bark-notify
 
 Action execution may be asynchronous. Inspect the plugin command log for script output and exit status. Preview and test actions use synthetic sample context, rather than claiming to report an actual task completion.
 
-Now run a normal agent task inside Herdr. When Herdr reports `done` or `blocked`, the plugin automatically sends a notification. It does not infer completion from a shell process exit or read terminal output. Herdr's agent detection and integrations must be functioning for these events to exist.
+Now run a normal agent task inside Herdr. When Herdr reports `done`, a verified completed `idle`, or `blocked`, the plugin automatically sends a notification. For completion events, it queries only the event pane with `herdr agent get` and requires a positive `completion_seq` equal to `state_change_seq`. Initial idle and session changes are ignored. It does not infer completion from a shell process exit or read terminal output.
+
+Completion deliveries are claimed under `HERDR_PLUGIN_STATE_DIR` by pane, agent session (when available) and completion sequence. A file lock serializes concurrent hooks, so one round sends at most once while a later round can notify again. The state directory is supplied by Herdr; no state is written into this checkout. A completion without reliable sequence/state data is skipped rather than guessed.
 
 ## Installing from GitHub
 
@@ -443,13 +445,13 @@ Linked JavaScript and config changes apply on the next invocation. After editing
 | Cannot read config / missing endpoint | Get the path with `herdr plugin config-dir herdr.bark-notify`; create `config.json` there, not in the checkout. |
 | Example key error | Replace `YOUR_BARK_KEY` with your actual Bark key. |
 | Invalid JSON or unknown option | Use strict JSON, the documented names and types, and run `check`. Errors omit raw values to protect credentials. |
-| Test succeeds, automatic notifications do not | Check plugin enable state, `enabled`, status filters, and whether Herdr actually reports `done` or `blocked`. Merely closing a process is not the trigger. Herdr may report `idle` rather than unseen `done` for a viewed/focused completion; this plugin does not reinterpret `idle`. |
+| Test succeeds, automatic notifications do not | Use Herdr 0.9.5+, check plugin enable state and `enabled`, then inspect plugin logs. Focused completions may arrive as `idle`; they notify only after the event pane's `agent get` confirms matching completion/state-change sequences. Startup idle, session changes, missing fields and failed lookups are intentionally skipped. |
 | Only workspace/pane IDs are shown | The host did not provide matching labels, or no pane title was available. Set a meaningful pane title in Herdr. |
 | HTTP 4xx | Check the key and endpoint; use `/push` only with `device_key`. HTTP 429 is retried. |
 | HTTP 5xx / network error / timeout | Check Bark availability, DNS, firewall, and HTTPS trust. Redirects are refused; configure the final endpoint. |
 | Bark rejected the notification | HTTP succeeded but Bark's JSON `code` was not `200`. Check the endpoint/key/server. |
 | Notification sent but phone is quiet | Bark acceptance is not proof of iPhone delivery. Check iOS notification permissions, Focus mode, connectivity and Bark sound settings. |
-| Repeated notifications | Every matching event is eligible; there is no persistent deduplication. Network retries may duplicate a push if the first delivery succeeded but its acknowledgement was lost. |
+| Repeated notifications | Completion hooks deduplicate by pane/session and sequence. Network retries can still duplicate a push if the first delivery succeeded but its acknowledgement was lost. |
 | Remote agents do not notify | Install Node, link/install the plugin, and configure Bark on the machine running that Herdr server. Local configuration is not copied to remote hosts. |
 
 Requests retry network errors, timeouts, HTTP 429/5xx, and integer Bark response codes 429/5xx. Other rejections and invalid response JSON fail immediately. Retries wait 250 ms, then 500 ms; `Retry-After` is not interpreted. Maximum configured runtime for network attempts is roughly 30.75 seconds plus process overhead. There is no durable queue or eventual-delivery guarantee. Set `retries: 0` to avoid automatic retransmission.
@@ -476,7 +478,8 @@ src/config.mjs         Config loading, initialization, validation
 src/message.mjs        Identity resolution, localization, templates
 src/agents.mjs         Herdr agent names and default square avatar URLs
 src/bark.mjs           Bounded HTTP delivery and retries
-src/herdr.mjs          Read-only lookup for missing pane labels
+src/herdr.mjs          Read-only pane/completion lookups
+src/dedupe.mjs         Locked, persistent completion claims
 config.example.json    Extended configuration example
 fixtures/              Sample Herdr events
 test/                  Node built-in test suite

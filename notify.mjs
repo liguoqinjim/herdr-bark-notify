@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
 import { configPath, initConfig, loadConfig, requireEndpoint, UserError } from './src/config.mjs';
-import { eventStatus, parseObject, buildNotification, sampleEvent } from './src/message.mjs';
+import { eventStatus, parseObject, buildNotification, sampleEvent, completionKey } from './src/message.mjs';
 import { sendBark } from './src/bark.mjs';
-import { enrichPaneTitle } from './src/herdr.mjs';
+import { enrichPaneTitle, resolveCompletion } from './src/herdr.mjs';
+import { claimCompletion } from './src/dedupe.mjs';
 
 const help = `Herdr Bark Notify / Herdr Bark 通知
 
@@ -62,6 +63,18 @@ async function main() {
   } else event = sampleEvent(options.status);
 
   if (options.command === 'event' && !eventStatus(event, env)) return;
+  let completion;
+  let key;
+  if (options.command === 'event') {
+    const resolved = await resolveCompletion(event, env);
+    if (resolved.skip) return console.log(`Skipped: ${resolved.skip}.`);
+    event = resolved.event;
+    completion = resolved.agent;
+    key = completionKey(event, completion);
+    if (event.data?.agent_status?.toLowerCase() === 'done' && !key) {
+      return console.log('Skipped: completion has no reliable sequence. / 完成事件缺少可靠序号，已跳过。');
+    }
+  }
   const config = await loadConfig(file, env);
   if (options.command === 'check') {
     requireEndpoint(config);
@@ -76,9 +89,11 @@ async function main() {
     return;
   }
   if (options.command === 'preview') return console.log(JSON.stringify(notification.payload, null, 2));
+  if (key && !await claimCompletion(env, key)) return console.log('Skipped: duplicate completion. / 重复完成事件，已跳过。');
   if (options.command === 'test') notification.payload.title = `[TEST / 测试] ${notification.payload.title ?? 'Herdr Bark'}`;
   const result = await sendBark(config, notification.payload);
   console.log(`Bark notification sent (${notification.variables.status}; attempts=${result.attempts}). / Bark 通知已发送。`);
+  if (key) console.log(`Completion sequence: ${event.data.completion_seq}.`);
 }
 
 main().catch(error => {
