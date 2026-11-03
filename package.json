@@ -1,6 +1,6 @@
 {
   "name": "herdr-bark-notify",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Bilingual, dependency-free Bark notification plugin for Herdr",
   "type": "module",

@@ -1,8 +1,21 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { UserError, requireEndpoint } from './config.mjs';
 
-export async function sendBark(config, payload, { fetchImpl = fetch, sleepImpl = sleep } = {}) {
+export async function sendBark(config, payload, options = {}) {
   requireEndpoint(config);
+  if (!Array.isArray(config.bark_url)) return sendOne(config, config.bark_url, payload, options);
+  let attempts = 0;
+  // Continue independent devices when one endpoint is unavailable; never expose its key.
+  const results = await Promise.allSettled(config.bark_url.map(url => sendOne(config, url, payload, options)));
+  for (const result of results) {
+    if (result.status === 'fulfilled') attempts += result.value.attempts;
+    else if (result.reason instanceof UserError) throw result.reason;
+    else throw new UserError('Unexpected Bark failure / Bark 发送失败');
+  }
+  return { attempts, endpoints: results.length };
+}
+
+async function sendOne(config, barkUrl, payload, { fetchImpl = fetch, sleepImpl = sleep } = {}) {
   const body = JSON.stringify({ ...payload, ...(config.device_key ? { device_key: config.device_key } : {}) });
   for (let attempt = 0; attempt <= config.retries; attempt++) {
     const controller = new AbortController();
@@ -10,7 +23,7 @@ export async function sendBark(config, payload, { fetchImpl = fetch, sleepImpl =
     let failure;
     let retry = false;
     try {
-      const response = await fetchImpl(config.bark_url, {
+      const response = await fetchImpl(barkUrl, {
         method: 'POST', headers: { 'content-type': 'application/json; charset=utf-8' },
         body, signal: controller.signal, redirect: 'error',
       });

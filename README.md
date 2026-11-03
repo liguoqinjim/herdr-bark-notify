@@ -130,8 +130,19 @@ Only the Bark endpoint is required. The default notification language is **`zh-C
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `bark_url` | Required for sending | Full key endpoint, e.g. `https://api.day.app/KEY`, or a `/push` endpoint with `device_key`. |
+| `bark_url` | Required for sending | Full key endpoint, e.g. `https://api.day.app/KEY`, or a `/push` endpoint with `device_key`. Since 1.4.0, an array of key-in-path endpoints notifies multiple devices; duplicates are removed. |
 | `device_key` | Omitted | Required for `/push`; rejected for a key-in-path endpoint. |
+
+For two iPhones with different Bark keys, replace only the existing `bark_url` value and keep your other settings:
+
+```json
+"bark_url": [
+  "https://api.day.app/KEY_FOR_IPHONE_1",
+  "https://api.day.app/KEY_FOR_IPHONE_2"
+]
+```
+
+The plugin sends to every distinct endpoint. Identical endpoints are sent only once. Arrays accept at most 10 key-in-path URLs; `/push` plus `device_key` remains single-endpoint only. A failed endpoint is reported after the others are attempted.
 | `enabled` | `true` | Master switch for automatic notifications. |
 | `locale` | `"zh-CN"` | `"zh-CN"` or `"en"`; controls default status labels and body text. |
 | `timeout_ms` | `5000` | Per-attempt deadline, including reading the response body. Integer, 100–10000. |

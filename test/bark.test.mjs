@@ -73,3 +73,26 @@ test('bounds response size and retries transient network failures without loggin
   }), error => !error.message.includes('private'));
   assert.equal(count, 2);
 });
+
+test('sends distinct device keys once each and preserves the shared payload', async () => {
+  const requests = [];
+  const result = await sendBark(normalizeConfig({ bark_url: ['https://api.day.app/one', 'https://api.day.app/two', 'https://api.day.app/one'] }), { body: 'done' }, {
+    fetchImpl: async (url, options) => {
+      requests.push({ url, body: JSON.parse(options.body) });
+      return new Response('{"code":200}');
+    },
+  });
+  assert.deepEqual(requests, [
+    { url: 'https://api.day.app/one', body: { body: 'done' } },
+    { url: 'https://api.day.app/two', body: { body: 'done' } },
+  ]);
+  assert.deepEqual(result, { attempts: 2, endpoints: 2 });
+});
+
+test('tries every configured endpoint before reporting a safe failure', async () => {
+  const urls = [];
+  await assert.rejects(sendBark(normalizeConfig({ bark_url: ['https://api.day.app/private', 'https://api.day.app/two'], retries: 0 }), { body: 'done' }, {
+    fetchImpl: async url => { urls.push(url); if (url.includes('private')) throw new Error(url); return new Response('{"code":200}'); },
+  }), error => !error.message.includes('private'));
+  assert.deepEqual(urls, ['https://api.day.app/private', 'https://api.day.app/two']);
+});

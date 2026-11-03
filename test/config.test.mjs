@@ -21,6 +21,15 @@ test('supports JSON /push and a self-hosted reverse-proxy prefix', () => {
   assert.throws(() => normalizeConfig({ bark_url: 'https://api.day.app/key', device_key: 'key' }), /\/push/);
 });
 
+test('accepts multiple key-in-path endpoints and deduplicates identical devices', () => {
+  const config = normalizeConfig({ bark_url: ['https://api.day.app/one', 'https://api.day.app/two', 'https://api.day.app/one'] });
+  assert.deepEqual(config.bark_url, ['https://api.day.app/one', 'https://api.day.app/two']);
+  for (const bark_url of [[], ['https://api.day.app/push'], ['https://api.day.app/key', 3], ['https://api.day.app/key', 'file:///secret']]) {
+    assert.throws(() => normalizeConfig({ bark_url }));
+  }
+  assert.throws(() => normalizeConfig({ bark_url: ['https://api.day.app/one'], device_key: 'secret' }));
+});
+
 test('UU Remote is opt-in and validates device IDs and window modes without exposing values', () => {
   assert.deepEqual(normalizeConfig({}).uuremote, { enabled: false, window_type: 0 });
   assert.deepEqual(normalizeConfig({ uuremote: { enabled: true } }).uuremote, { enabled: true, window_type: 0 });

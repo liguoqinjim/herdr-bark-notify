@@ -130,8 +130,19 @@ herdr plugin config-dir herdr.bark-notify
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `bark_url` | 发送时必填 | 含设备密钥的完整地址，如 `https://api.day.app/KEY`；也可使用 `/push` 配合 `device_key`。 |
+| `bark_url` | 发送时必填 | 含设备密钥的完整地址，如 `https://api.day.app/KEY`；也可使用 `/push` 配合 `device_key`。自 1.4.0 起可填写多个含 Key 的地址数组，向多台设备推送并自动去重。 |
 | `device_key` | 不设置 | `/push` 地址必须填写；密钥已在路径中的地址不能同时设置此项。 |
+
+两台 iPhone 使用不同 Bark Key 时，只替换原来的 `bark_url` 值，其他配置保持不变：
+
+```json
+"bark_url": [
+  "https://api.day.app/第一台手机的KEY",
+  "https://api.day.app/第二台手机的KEY"
+]
+```
+
+插件会向每个不同地址推送；相同地址只发一次。数组最多支持 10 个含 Key 的 URL；`/push` 配合 `device_key` 仍只支持单地址。某个地址失败时会继续尝试其他地址，并报告错误。
 | `enabled` | `true` | 自动通知总开关。 |
 | `locale` | `"zh-CN"` | 支持 `"zh-CN"`、`"en"`，控制默认状态标签和正文。 |
 | `timeout_ms` | `5000` | 每次请求的超时毫秒数，包含读取响应正文；整数，100–10000。 |

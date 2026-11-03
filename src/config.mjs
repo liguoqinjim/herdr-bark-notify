@@ -104,23 +104,38 @@ export function normalizeConfig(raw, env = {}) {
   if (env.BARK_DEVICE_KEY?.trim()) config.device_key = env.BARK_DEVICE_KEY.trim();
   if (config.device_key !== undefined) string(config.device_key, 'device_key');
   if (config.bark_url !== undefined) {
-    string(config.bark_url, 'bark_url');
-    let url;
-    try { url = new URL(config.bark_url); } catch { throw new UserError('bark_url is not a valid URL / 地址无效'); }
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname === '/') {
-      throw new UserError('bark_url must be an HTTP(S) push endpoint without userinfo, query or fragment / 请填写推送端点');
+    if (Array.isArray(config.bark_url)) {
+      if (config.bark_url.length === 0) throw new UserError('bark_url must be a non-empty URL array / 地址数组不能为空');
+      if (config.bark_url.length > 10) throw new UserError('bark_url supports at most 10 endpoints / 最多支持 10 个地址');
+      if (config.device_key !== undefined) throw new UserError('Multiple bark_url values require key-in-path endpoints / 多地址请使用包含 Key 的 URL');
+      config.bark_url = [...new Set(config.bark_url.map(value => normalizeEndpoint(value).href))];
+    } else {
+      string(config.bark_url, 'bark_url');
+      const url = normalizeEndpoint(config.bark_url, true);
+      const pushEndpoint = url.pathname.replace(/\/$/, '').endsWith('/push');
+      if (pushEndpoint && !config.device_key) throw new UserError('/push requires device_key / 缺少设备密钥');
+      if (!pushEndpoint && config.device_key) throw new UserError('device_key requires a /push endpoint');
+      config.bark_url = url.href;
     }
-    const pushEndpoint = url.pathname.replace(/\/$/, '').endsWith('/push');
-    if (pushEndpoint && !config.device_key) throw new UserError('/push requires device_key / 缺少设备密钥');
-    if (!pushEndpoint && config.device_key) throw new UserError('device_key requires a /push endpoint');
-    config.bark_url = url.href;
   }
   return config;
 }
 
+function normalizeEndpoint(value, allowPush = false) {
+  string(value, 'bark_url');
+  let url;
+  try { url = new URL(value); } catch { throw new UserError('bark_url is not a valid URL / 地址无效'); }
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname === '/') {
+    throw new UserError('bark_url must be an HTTP(S) push endpoint without userinfo, query or fragment / 请填写推送端点');
+  }
+  if (!allowPush && url.pathname.replace(/\/$/, '').endsWith('/push')) throw new UserError('Multiple bark_url values require key-in-path endpoints / 多地址请使用包含 Key 的 URL');
+  return url;
+}
+
 export function requireEndpoint(config) {
-  if (!config.bark_url) throw new UserError('Missing bark_url: configure config.json or BARK_URL / 请配置 Bark 地址');
-  if (/YOUR_BARK_KEY|REPLACE_ME|你的BarkKey/i.test(config.bark_url) || /YOUR_BARK_KEY|REPLACE_ME/i.test(config.device_key ?? '')) {
+  const urls = Array.isArray(config.bark_url) ? config.bark_url : config.bark_url ? [config.bark_url] : [];
+  if (urls.length === 0) throw new UserError('Missing bark_url: configure config.json or BARK_URL / 请配置 Bark 地址');
+  if (urls.some(url => /YOUR_BARK_KEY|REPLACE_ME|你的BarkKey/i.test(url)) || /YOUR_BARK_KEY|REPLACE_ME/i.test(config.device_key ?? '')) {
     throw new UserError('Replace the example Bark key before sending / 请替换示例密钥');
   }
 }

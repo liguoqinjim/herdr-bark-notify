@@ -116,3 +116,9 @@ The Chinese and English Webhook.site walkthrough commands were executed locally 
 On 2026-11-03, Herdr 0.9.5 confirmed that real plugin event JSON contains `pane_agent_status_changed` and no completion/state-change sequences; those fields are available from `agent get`. Focused Pi completion was `idle` with matching sequences. `npm run check` and all 44 tests passed, including focused/background completion, initial idle, missing fields, duplicate events, consecutive rounds, pane/session changes and 20 concurrent claims. The isolated real-Herdr smoke test passed with two test pushes, one blocked push and one verified completion push to its local HTTP mock. No real Bark notification was sent by these automated checks. iPhone lock-screen/Termius and cmux behavior still require device observation.
 
 2026-11-03 使用 Herdr 0.9.5 确认：真实插件事件 JSON 使用 `pane_agent_status_changed`，不含完成/状态序号；序号需通过 `agent get` 获取。聚焦 Pi 的完成状态为 `idle`，两个序号一致。`npm run check` 与 44 项测试通过，覆盖聚焦/后台完成、初始空闲、缺字段、重复事件、连续轮次、Pane/会话更换和 20 个并发去重。真实 Herdr 隔离集成测试通过，本地 HTTP 模拟服务收到两条测试、一条待处理和一条经核验的完成通知。这些自动化检查没有向真实 Bark 推送；iPhone 锁屏/Termius 与 cmux 表现仍需真机观察。
+
+## Version 1.4.0 multiple devices / 1.4.0 多设备推送
+
+All 47 tests passed. New tests verify distinct key-in-path endpoints, duplicate removal, shared payloads, continued delivery after another endpoint fails, credential-safe errors, and compatibility with the existing single string and `/push` formats. No user configuration or real Bark endpoint was changed.
+
+47 项测试通过。新增测试覆盖不同含 Key 地址、重复地址去除、共享通知内容、单地址失败后继续发送、错误脱敏，以及原单字符串和 `/push` 配置兼容。没有修改用户配置或请求真实 Bark 地址。
