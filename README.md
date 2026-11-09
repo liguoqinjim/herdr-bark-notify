@@ -29,6 +29,23 @@ Pane: w1:p3
 
 The implementation uses portable Node APIs and declares macOS, Linux and Windows support. Local verification was performed on macOS with Node 24 and Herdr 0.9.0; the repository includes a CI matrix for Node 22/24 on all three operating systems. A CI definition is not evidence that those remote jobs have already run.
 
+## Local Pi ask notifications (without Bark)
+
+The standalone Pi extension [`extensions/herdr-ask-notify.js`](extensions/herdr-ask-notify.js) supports `@juicesharp/rpiv-ask-user-question`. It forwards questionnaire waiting events to the official Herdr Pi integration's `herdr:blocked` channel, reusing Herdr's local notifications. Answering, cancelling or shutting down clears the wait. Duplicate events are ignored, and overlapping questionnaires remain blocked until all close.
+
+1. Install the official Herdr Pi integration (`herdr integration install pi`) and the ask plugin.
+2. From this repository's root, load the standalone extension globally:
+
+   ```sh
+   ln -s "$PWD/extensions/herdr-ask-notify.js" "$HOME/.pi/agent/extensions/herdr-ask-notify.js"
+   ```
+
+3. Enter `/reload` in Pi inside Herdr, have Pi call `ask_user_question`, and switch to another Herdr workspace to check the notification.
+
+The extension runs only in interactive Pi sessions inside Herdr. It does not modify Herdr-managed extensions or replace an existing cmux patch. Popups still follow Herdr's background rules and `ui.toast.delivery`; `off` disables popups. The extension itself does not read Bark configuration or send network requests. If the separate Bark plugin is enabled, it still handles `blocked` according to its existing configuration.
+
+Optional event-only self-check: `node scripts/check_pi_ask.mjs` (no Herdr connection or notifications).
+
 ## Quick start: local checkout
 
 Run these commands from this repository's root directory. No `npm install` is required.
@@ -144,6 +161,7 @@ For two iPhones with different Bark keys, replace only the existing `bark_url` v
 
 The plugin sends to every distinct endpoint. Identical endpoints are sent only once. Arrays accept at most 10 key-in-path URLs; `/push` plus `device_key` remains single-endpoint only. A failed endpoint is reported after the others are attempted.
 | `enabled` | `true` | Master switch for automatic notifications. |
+| `suppress_when_mac_active_seconds` | `0` (off) | On macOS, skip automatic Bark notifications when local keyboard/mouse input occurred within this many seconds. Integer, 0–86400. Use `120` for a two-minute activity window. |
 | `locale` | `"zh-CN"` | `"zh-CN"` or `"en"`; controls default status labels and body text. |
 | `timeout_ms` | `5000` | Per-attempt deadline, including reading the response body. Integer, 100–10000. |
 | `retries` | `1` | Additional attempts after transient errors. Integer, 0–2. |
@@ -153,6 +171,14 @@ The plugin sends to every distinct endpoint. Identical endpoints are sent only o
 | `agents` | Built-in names | Settings keyed by the exact event `data.agent` value. Each allows `name`, `notification`, `statuses`. |
 
 Unknown options, unsupported template variables and invalid types are errors rather than silently ignored settings. JSON must not contain comments or trailing commas. UTF-8 BOMs, such as those produced by some Windows editors, are accepted.
+
+### Pause Bark while using your Mac
+
+Add `"suppress_when_mac_active_seconds": 120` to the actual plugin configuration, preserving existing endpoints and other settings. It applies to the next automatic event without restarting Herdr or reloading Pi. Set it to `0` to disable.
+
+Before sending `done` or `blocked` (including ask), the plugin queries `HIDIdleTime` through macOS's built-in `ioreg`. Input in any app counts, not just cmux. SSH input does not reset the Mac's local input idle time; remote desktop control may. Input within the last 120 seconds skips that Bark notification; otherwise it sends normally. Herdr state and local notifications are unchanged.
+
+This is an activity heuristic, not precise presence detection: notifications may be suppressed for two minutes after leaving, and watching without input may count as idle. **Skipped notifications are not queued or sent later.** Non-macOS hosts and failed lookups send normally; explicit `test` commands bypass suppression. The feature defaults to off for compatibility. Optional simulated self-check: `node scripts/check_activity.mjs` (no hardware or network access).
 
 ### Notification fields
 

@@ -7,7 +7,7 @@ export const VARIABLES = new Set([
   'workspace', 'workspace_id', 'tab', 'tab_id', 'pane', 'pane_id', 'message',
 ]);
 const FIELDS = new Set(['title', 'subtitle', 'body', 'group', 'sound', 'icon', 'url', 'level', 'call', 'volume', 'badge', 'isArchive', 'copy']);
-const ROOT = new Set(['bark_url', 'device_key', 'enabled', 'locale', 'statuses', 'notification', 'agents', 'timeout_ms', 'retries', 'uuremote']);
+const ROOT = new Set(['bark_url', 'device_key', 'enabled', 'locale', 'statuses', 'notification', 'agents', 'timeout_ms', 'retries', 'uuremote', 'suppress_when_mac_active_seconds']);
 export const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function object(value, label) {
@@ -85,11 +85,12 @@ function uuRemote(value) {
 
 export function normalizeConfig(raw, env = {}) {
   keys(raw, ROOT, 'config');
-  const config = { enabled: true, locale: 'zh-CN', timeout_ms: 5000, retries: 1, notification: {}, statuses: {}, agents: {}, ...raw };
+  const config = { enabled: true, locale: 'zh-CN', timeout_ms: 5000, retries: 1, suppress_when_mac_active_seconds: 0, notification: {}, statuses: {}, agents: {}, ...raw };
   if (typeof config.enabled !== 'boolean') throw new UserError('enabled must be boolean');
   if (!['zh-CN', 'en'].includes(config.locale)) throw new UserError('locale must be zh-CN or en');
   integer(config.timeout_ms, 100, 10000, 'timeout_ms');
   integer(config.retries, 0, 2, 'retries');
+  integer(config.suppress_when_mac_active_seconds, 0, 86400, 'suppress_when_mac_active_seconds');
   config.uuremote = uuRemote(config.uuremote === undefined ? {} : config.uuremote);
   notification(config.notification, 'notification');
   statuses(config.statuses, 'statuses');

@@ -29,6 +29,23 @@ Pane: w1:p3
 
 代码使用跨平台 Node API，声明支持 macOS、Linux 和 Windows。本地验证环境为 macOS、Node 24 和 Herdr 0.9.0；仓库包含三种系统、Node 22/24 的 CI 矩阵。提供 CI 配置不代表远端工作流已经运行通过。
 
+## Pi 的 ask 本地通知（不经过 Bark）
+
+仓库另提供独立的 Pi 扩展 [`extensions/herdr-ask-notify.js`](extensions/herdr-ask-notify.js)，适配 `@juicesharp/rpiv-ask-user-question`。它把问卷的等待事件转为 Herdr 官方 Pi 集成认识的 `herdr:blocked`，复用 Herdr 的本地通知；回答、取消或关闭会话时解除等待。重复事件不会重复计数，同时打开多份问卷也不会提前解除等待。
+
+1. 确保已安装 Herdr 官方 Pi 集成（`herdr integration install pi`）和 ask 插件。
+2. 在本仓库根目录执行，将独立扩展加载到所有 Pi 会话：
+
+   ```sh
+   ln -s "$PWD/extensions/herdr-ask-notify.js" "$HOME/.pi/agent/extensions/herdr-ask-notify.js"
+   ```
+
+3. 在 Herdr 内的 Pi 输入 `/reload`，让 Pi 调用 `ask_user_question`，切换到其他 Herdr 工作区等待通知。
+
+扩展仅在 Herdr 的交互式 Pi 会话中生效，不修改 Herdr 管理的扩展，也不替代你已有的 cmux 补丁。弹窗仍遵循 Herdr 的后台判定与 `ui.toast.delivery` 设置；该设置为 `off` 时不会弹窗。扩展本身不读取 Bark 配置、不发送网络请求；若另行启用了本仓库的 Bark 插件，它仍会按原配置响应 `blocked` 状态。
+
+可选的纯事件自检：`node scripts/check_pi_ask.mjs`（不连接 Herdr、不发送通知）。
+
 ## 快速开始：加载本地插件
 
 在本仓库根目录执行，无需 `npm install`：
@@ -144,6 +161,7 @@ herdr plugin config-dir herdr.bark-notify
 
 插件会向每个不同地址推送；相同地址只发一次。数组最多支持 10 个含 Key 的 URL；`/push` 配合 `device_key` 仍只支持单地址。某个地址失败时会继续尝试其他地址，并报告错误。
 | `enabled` | `true` | 自动通知总开关。 |
+| `suppress_when_mac_active_seconds` | `0`（关闭） | macOS 上，最近指定秒数内有键鼠操作则跳过自动 Bark 通知；整数，0–86400。设为 `120` 表示最近 2 分钟使用 Mac 时不推送。 |
 | `locale` | `"zh-CN"` | 支持 `"zh-CN"`、`"en"`，控制默认状态标签和正文。 |
 | `timeout_ms` | `5000` | 每次请求的超时毫秒数，包含读取响应正文；整数，100–10000。 |
 | `retries` | `1` | 临时错误后额外重试次数；整数，0–2。 |
@@ -153,6 +171,14 @@ herdr plugin config-dir herdr.bark-notify
 | `agents` | 内置显示名称 | 以事件 `data.agent` 的真实值为键，每项可包含 `name`、`notification`、`statuses`。 |
 
 未知字段、未知模板变量和错误类型会直接报错，避免拼写错误被静默忽略。配置必须是标准 JSON，不支持注释或末尾多余逗号；支持部分 Windows 编辑器生成的 UTF-8 BOM。
+
+### Mac 使用中暂停 Bark
+
+在实际插件配置中添加 `"suppress_when_mac_active_seconds": 120`，保留已有地址和其他设置。下次自动事件立即生效，无需重启 Herdr 或重新加载 Pi。设为 `0` 可关闭此功能。
+
+插件在发送 `done` 或 `blocked`（包括 ask）时，使用 macOS 自带的 `ioreg` 查询 `HIDIdleTime`；任意 App 中的键鼠操作都算活跃，不只限于 cmux。SSH 操作不重置 Mac 本地的输入空闲时间；远程桌面控制则可能重置。最近 120 秒内有操作就跳过本次 Bark，否则正常推送。只影响 Bark，不改变 Herdr 状态或本地通知。
+
+这是活动时间判断，不是精确的人体在场检测：离开 Mac 后的前 2 分钟仍可能被静音，长时间只看屏幕则可能被判为空闲。**跳过的通知不会在稍后补发**。非 macOS 或查询失败时照常通知；显式 `test` 命令绕过此限制。默认关闭，避免改变已有用户行为。可选模拟自检：`node scripts/check_activity.mjs`（不访问硬件或网络）。
 
 ### 通知字段
 

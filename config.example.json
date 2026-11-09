@@ -1,6 +1,7 @@
 {
   "bark_url": "https://api.day.app/YOUR_BARK_KEY",
   "enabled": true,
+  "suppress_when_mac_active_seconds": 0,
   "locale": "zh-CN",
   "timeout_ms": 5000,
   "retries": 1,

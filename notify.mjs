@@ -5,6 +5,7 @@ import { eventStatus, parseObject, buildNotification, sampleEvent, completionKey
 import { sendBark } from './src/bark.mjs';
 import { enrichPaneTitle, resolveCompletion } from './src/herdr.mjs';
 import { claimCompletion } from './src/dedupe.mjs';
+import { isMacActive } from './src/activity.mjs';
 
 const help = `Herdr Bark Notify / Herdr Bark 通知
 
@@ -89,6 +90,9 @@ async function main() {
     return;
   }
   if (options.command === 'preview') return console.log(JSON.stringify(notification.payload, null, 2));
+  if (options.command === 'event' && await isMacActive(config.suppress_when_mac_active_seconds)) {
+    return console.log('Skipped: Mac recently active. / Mac 最近有键鼠操作，已跳过本次 Bark 通知。');
+  }
   if (key && !await claimCompletion(env, key)) return console.log('Skipped: duplicate completion. / 重复完成事件，已跳过。');
   if (options.command === 'test') notification.payload.title = `[TEST / 测试] ${notification.payload.title ?? 'Herdr Bark'}`;
   const result = await sendBark(config, notification.payload);
